@@ -17,7 +17,10 @@ Place the project contents in the site's document root. Include the hidden root
 .htaccess file when copying or uploading the project.
 For a local MAMP setup, select the project directory as the document root.
 
-Open the site URL. The initial page displays: Gonzo PHP
+Open the site URL. The initial page displays Gonzo PHP and
+Small framework. Plain PHP. The shared header loads Pico CSS from its CDN.
+Only the homepage handler and default/shared views are bundled. Other route
+examples in this guide illustrate conventions and are not included files.
 
 LAYOUT
 
@@ -117,17 +120,20 @@ VIEWS
 
 Handler and view directory structures are independent. In a handler, call:
 
-$app->render('utenti/profilo', ['username' => $app->item(0)]);
+$app->render('index', [
+    'title' => 'Gonzo PHP',
+    'message' => 'Small framework. Plain PHP.',
+]);
 
-This outputs views/utenti/profilo.php from the configured views directory.
-To use views/utenti/profilo/index.php, request 'utenti/profilo/index' explicitly.
+This outputs views/index.php from the configured views directory.
+For views/pages/home/index.php, request 'pages/home/index' explicitly.
 There is no index fallback or __ITEM__ matching. Names are relative without
 .php; each segment accepts lowercase letters, digits, underscores, and hyphens.
 
 Inside the template, read values through $data, not automatically created
 variables. Escape values explicitly for the output context, for example:
 
-<h1><?= $app->escape($data['username']) ?></h1>
+<h1><?= $app->escape($data['title']) ?></h1>
 
 
 Views receive the current framework instance as $app. escape(string $value)
@@ -145,14 +151,14 @@ SHARED HEADER AND FOOTER
 
 A view can compose other views using render(), without additional framework API:
 
-<?php $app->render('shared/header', ['title' => 'Profilo Utente']); ?>
+<?php $app->render('shared/header', ['title' => $data['title']]); ?>
 <!-- Page content goes here. -->
 <?php $app->render('shared/footer'); ?>
 
 views/shared/header.php opens the document and escapes the supplied title.
 views/shared/footer.php closes the document. Each call receives its own data
 array; header data does not replace the data in the calling view.
-The profile view demonstrates this composition. Routing remains unchanged.
+The default view demonstrates this composition. Routing remains unchanged.
 
 RESPONSE HELPERS
 

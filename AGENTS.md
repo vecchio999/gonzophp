@@ -63,7 +63,9 @@ protections to cover them; configuration does not change Apache rules.
 `run(): void` calls the private `resolve(): ?array` method, then selects and requires the
 handler for the request method. Missing or invalid routes return HTTP 404 with `Not Found`.
 A missing handler directory raises RuntimeException as a configuration error.
-The homepage handler currently prints `Gonzo PHP`.
+The homepage handler renders `views/index.php` with a title and message.
+The starter includes only this handler, the default view, and shared header/footer.
+Other routes shown below are documentation examples, not bundled handlers.
 
 Routing rules:
 - `/` resolves to `handlers/index.php`.
@@ -159,11 +161,15 @@ handlers intended to be restricted. Public handlers need no extra declaration.
 View folders are independent of handler folders. For example:
 
 ```php
-$app->render('utenti/profilo', ['username' => $app->item(0)]);
+$app->render('index', [
+    'title' => 'Gonzo PHP',
+    'message' => 'Small framework. Plain PHP.',
+]);
 ```
 
-This loads only `views/utenti/profilo.php` from the configured views directory.
-For `views/utenti/profilo/index.php`, explicitly request `utenti/profilo/index`.
+This loads only `views/index.php` from the configured views directory.
+For a nested template such as `views/pages/home/index.php`, explicitly request
+`pages/home/index`.
 There is no directory index fallback, __ITEM__ matching, or automatic escaping.
 Names are relative, without .php, with lowercase letters, digits, underscores,
 and hyphens per segment. Absolute paths, dots, and empty segments are rejected.
@@ -172,7 +178,7 @@ Resolved files (including symlink targets) must remain within the view directory
 Templates read values from `$data`; keys are not extracted into variables:
 
 ```php
-<h1><?= $app->escape($data['username']) ?></h1>
+<h1><?= $app->escape($data['title']) ?></h1>
 ```
 
 
@@ -188,7 +194,7 @@ are implemented. Apply requireAccess() in the handler before rendering.
 
 ## Shared views
 
-Compose templates with the existing render() method. The profile view uses
+Compose templates with the existing render() method. The default view uses
 `shared/header` with an explicit `title` string, and `shared/footer` without data.
 The header opens the HTML document and body; the footer closes them.
 Each render() call has its own $data array: pass the values needed by each shared
