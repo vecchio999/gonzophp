@@ -95,19 +95,21 @@ For /utenti/davide/articoli/42/edit, the handler can be:
 Handlers receive the current GonzoPHP instance as `$app`:
 
 ```php
-$username = $app->item(0); // davide
-$articleId = $app->item(1); // 42
+$username = $app->items()[0] ?? null; // davide
+$articleId = $app->items()[1] ?? null; // 42
 ```
 
-`item(int $index): ?string` returns a captured value or null for an absent index.
+`items(): array` returns all captured values as a zero-based list of strings.
+The array is returned by value; changing it does not modify the router state.
+Use `$app->items()[0] ?? null` for an index that might not exist.
 Values remain strings and follow traversal order. Captures are reset before
 each run and are committed only after successful resolution; failed requests
 leave no partial captures. Static segments do not consume an index.
 The same lowercase character restrictions apply to dynamic values.
 All traversed directories and final files must stay inside the handler root.
 
-There is no `items()` method or permission callback API yet.
-Do not call invented methods such as `items()` or `allow()`.
+There is no permission callback API. Use requireAccess() for access checks.
+The singular item() method has been removed; use items() instead.
 
 ## HTTP methods
 
@@ -228,7 +230,7 @@ Unlike render(), which continues for template composition, these methods exit:
 code after the call does not execute. No json() or renderHtml() aliases exist.
 
 Examples:
-$app->renderJson(['username' => $app->item(0)]);
+$app->renderJson(['username' => $app->items()[0] ?? null]);
 $app->renderJson(['error' => 'User not found'], 404);
 $app->redirect('/utenti', 303);
 

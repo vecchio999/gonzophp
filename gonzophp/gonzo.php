@@ -117,14 +117,16 @@ class GonzoPHP
     }
 
     /**
-     * Return a dynamic route value by its zero-based index.
+     * Return dynamic route values in traversal order, with zero-based indices.
      *
-     * @param int $index Dynamic parameter position.
-     * @return string|null The value, or null if the index does not exist.
+     * The array is returned by value; modifying it does not change router state.
+     * Use items()[0] ?? null when an index might not exist.
+     *
+     * @return list<string> Captured values, or an empty array when none exist.
      */
-    public function item(int $index): ?string
+    public function items(): array
     {
-        return $this->items[$index] ?? null;
+        return $this->items;
     }
 
     /**

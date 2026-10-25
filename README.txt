@@ -88,14 +88,17 @@ Example:
 
 The handler receives the current framework instance as $app:
 
-$username = $app->item(0); // davide
-$articleId = $app->item(1); // 42
+$username = $app->items()[0] ?? null; // davide
+$articleId = $app->items()[1] ?? null; // 42
 
 Indices start at zero and count only dynamic segments. Values are strings;
-missing indices return null. Captures are cleared on each run and remain empty
+use $app->items()[0] ?? null to handle missing indices. Captures are cleared
+on each run and remain empty
 for failed requests. Dynamic values use the same character restrictions as
 static segments: lowercase ASCII letters, digits, underscores, and hyphens.
-The items() method is not implemented.
+items() returns the array by value; modifying the returned array does not change
+the router state. With no captures it returns []. The singular item() method
+has been removed.
 
 HTTP METHODS
 
@@ -198,7 +201,7 @@ Unlike render(), which continues for template composition, these methods exit:
 code after the call does not execute. No json() or renderHtml() aliases exist.
 
 Examples:
-$app->renderJson(['username' => $app->item(0)]);
+$app->renderJson(['username' => $app->items()[0] ?? null]);
 $app->renderJson(['error' => 'User not found'], 404);
 $app->redirect('/utenti', 303);
 
