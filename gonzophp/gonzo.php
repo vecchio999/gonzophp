@@ -22,7 +22,7 @@ class GonzoPHP
     /**
      * Application configuration merged with the default filesystem paths.
      *
-     * Supported keys are root, handlers, and views. The views path is used
+     * Supported keys are root, handlers, views, and debug. The views path is used
      * by render() independently of the handler directory structure.
      *
      * @var array<string, mixed>
@@ -43,44 +43,74 @@ class GonzoPHP
      * and views paths are derived from the selected root; explicit paths take
      * precedence. Supply absolute filesystem paths for these options.
      * Configuration does not change Apache routing or access-control rules.
+     * Debug toggles PHP display_errors from construction onward; reporting
+     * levels and logging remain controlled by the host's PHP configuration.
      *
-     * @param array{root?: string, handlers?: string, views?: string} $config
-     *     Optional application root, handler directory, and view directory.
+     * @param array{root?: string, handlers?: string, views?: string, debug?: bool} $config
+     *     Optional filesystem paths and development diagnostics flag (default false).
      */
     public function __construct(array $config = [])
     {
         $root = $config['root'] ?? dirname(__DIR__);
 
         $this->config = array_replace([
+            'debug' => false,
             'root' => $root,
             'handlers' => $root . '/handlers',
             'views' => $root . '/views',
         ], $config);
+
+        ini_set('display_errors', $this->config['debug'] === true ? '1' : '0');
     }
 
     /**
      * Resolve and execute the handler for the current request.
      *
-     * Missing or invalid routes produce HTTP 404 and a plain Not Found message.
-     * Handlers receive this instance as $app through the local include scope.
-     * Dynamic values are reset before each dispatch.
+     * Missing routes return 404; unsupported methods return 405 with Allow.
+     * Handlers receive this instance as $app. HEAD suppresses output through
+     * request shutdown, including exit() in a handler. Exceptions propagate
+     * to the caller and are handled by PHP unless the application catches them.
      *
      * @return void
-     * @throws RuntimeException If the configured handler directory is missing
-     *     or does not resolve to a directory.
+     * @throws Throwable If routing or handler execution fails.
      */
     public function run(): void
     {
         $this->items = [];
+        $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
-        $handler = $this->resolve();
+        if ($method === 'HEAD') {
+            // Discard output through shutdown, including exit() in a handler.
+            ob_start(static function (string $output): string {
+                return '';
+            }, 1, 0);
+        }
 
-        if ($handler === null) {
+        $route = $this->resolve();
+
+        if ($route === null) {
             http_response_code(404);
             echo 'Not Found';
             return;
         }
 
+        $handlers = $route['handlers'];
+
+        if (isset($handlers['GET']) && !isset($handlers['HEAD'])) {
+            $handlers['HEAD'] = $handlers['GET'];
+        }
+
+        if (!isset($handlers[$method])) {
+            $allowed = array_keys($handlers);
+            sort($allowed);
+            header('Allow: ' . implode(', ', $allowed));
+            http_response_code(405);
+            echo 'Method Not Allowed';
+            return;
+        }
+
+        $this->items = $route['items'];
+        $handler = $handlers[$method];
         $app = $this;
 
         require $handler;
@@ -183,6 +213,72 @@ class GonzoPHP
     }
 
     /**
+     * Send a complete JSON response and terminate execution.
+     *
+     * Call before any output. Encode before changing response headers so a
+     * serialization failure does not send a partial JSON response.
+     *
+     * @param mixed $data JSON-serializable data.
+     * @param int $status Final HTTP status supporting a response body.
+     * @return void Does not return on success.
+     * @throws InvalidArgumentException If the status cannot carry JSON.
+     * @throws JsonException If data cannot be encoded as JSON.
+     * @throws RuntimeException If response headers were already sent.
+     */
+    public function renderJson(mixed $data, int $status = 200): void
+    {
+        if ($status < 200 || $status > 599 || in_array($status, [204, 205, 304], true)) {
+            throw new InvalidArgumentException('Invalid status for a JSON response.');
+        }
+
+        $json = json_encode($data, JSON_THROW_ON_ERROR);
+
+        if (headers_sent()) {
+            throw new RuntimeException('Response headers have already been sent.');
+        }
+
+        header('Content-Type: application/json');
+        http_response_code($status);
+
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'HEAD') {
+            echo $json;
+        }
+
+        exit;
+    }
+
+    /**
+     * Send a redirect and terminate execution without a response body.
+     *
+     * Call before output. Pass an application-controlled URI reference;
+     * this method does not restrict destinations to the current site.
+     * Use 303 after a POST when the next request should use GET.
+     *
+     * @param string $url Redirect destination without whitespace or controls.
+     * @param int $status One of 301, 302, 303, 307, or 308.
+     * @return void Does not return on success.
+     * @throws InvalidArgumentException If the status or destination is invalid.
+     * @throws RuntimeException If response headers were already sent.
+     */
+    public function redirect(string $url, int $status = 302): void
+    {
+        if (!in_array($status, [301, 302, 303, 307, 308], true)) {
+            throw new InvalidArgumentException('Invalid redirect status.');
+        }
+
+        if ($url === '' || preg_match('/[\x00-\x20\x7f]/', $url)) {
+            throw new InvalidArgumentException('Invalid redirect destination.');
+        }
+
+        if (headers_sent()) {
+            throw new RuntimeException('Response headers have already been sent.');
+        }
+
+        header('Location: ' . $url, true, $status);
+        exit;
+    }
+
+    /**
      * Find a handler for the path in the current request URI.
      *
      * Ignore the query string and trim leading and trailing slashes. Decode
@@ -193,17 +289,18 @@ class GonzoPHP
      * takes precedence; otherwise prefer a static directory over __ITEM__.
      * Never backtrack to a dynamic branch after choosing a static directory.
      * A resolved directory uses index.php, including the root path.
-     * Publish captured values only after finding a valid handler.
+     * Route selection is independent of the requested HTTP method.
+     * Captures are published by run() only when that method is supported.
      * Resolved directories and files, including symlink targets, must remain
      * within the handler directory. URL mount prefixes are not removed.
      * If REQUEST_URI is unavailable, use the root path.
      *
-     * @return string|null Absolute handler path, or null for an invalid path
-     *     or when no matching file exists within the handler directory.
+     * @return array{handlers: array<string, string>, items: list<string>}|null
+     *     Method handlers and captures, or null if the route does not exist.
      * @throws RuntimeException If the configured handler directory is missing
      *     or does not resolve to a directory.
      */
-    private function resolve(): ?string
+    private function resolve(): ?array
     {
         $handlersRoot = realpath($this->config['handlers']);
 
@@ -232,18 +329,12 @@ class GonzoPHP
         $last = count($segments) - 1;
 
         foreach ($segments as $index => $segment) {
-            // A static file takes precedence on the final segment.
+            // Any static method variant reserves the route before directories.
             if ($index === $last) {
-                $file = realpath($directory . '/' . $segment . '.php');
+                $handlers = $this->methodHandlers($directory, $segment, $prefix);
 
-                if ($file !== false && is_file($file)) {
-                    if (!str_starts_with($file, $prefix)) {
-                        return null;
-                    }
-
-                    $this->items = $items;
-
-                    return $file;
+                if ($handlers !== []) {
+                    return ['handlers' => $handlers, 'items' => $items];
                 }
             }
 
@@ -268,18 +359,58 @@ class GonzoPHP
             $directory = $next;
         }
 
-        $file = realpath($directory . '/index.php');
+        $handlers = $this->methodHandlers($directory, 'index', $prefix);
 
-        if (
-            $file === false
-            || !is_file($file)
-            || !str_starts_with($file, $prefix)
-        ) {
-            return null;
+        return $handlers === []
+            ? null
+            : ['handlers' => $handlers, 'items' => $items];
+    }
+
+    /**
+     * Collect method-specific files for a logical route name.
+     *
+     * The unprefixed file handles GET. Other methods use __METHOD__name.php;
+     * method names contain uppercase ASCII letters. __GET__ is not an alias.
+     * Only readable files resolving inside the handler root are eligible.
+     *
+     * @param string $directory Directory to inspect.
+     * @param string $name Logical filename without its extension.
+     * @param string $prefix Canonical handler root with a trailing separator.
+     * @return array<string, string> HTTP methods mapped to absolute file paths.
+     * @throws RuntimeException If the directory cannot be read.
+     */
+    private function methodHandlers(string $directory, string $name, string $prefix): array
+    {
+        $entries = scandir($directory);
+
+        if ($entries === false) {
+            throw new RuntimeException('Handler directory cannot be read.');
         }
 
-        $this->items = $items;
+        $handlers = [];
+        $pattern = '/\A__([A-Z]+)__' . preg_quote($name, '/') . '\.php\z/';
 
-        return $file;
+        foreach ($entries as $entry) {
+            if ($entry === $name . '.php') {
+                $method = 'GET';
+            } elseif (preg_match($pattern, $entry, $matches) && $matches[1] !== 'GET') {
+                $method = $matches[1];
+            } else {
+                continue;
+            }
+
+            $file = realpath($directory . '/' . $entry);
+
+            if (
+                $file !== false
+                && str_starts_with($file, $prefix)
+                && is_file($file)
+                && is_readable($file)
+            ) {
+                $handlers[$method] = $file;
+            }
+        }
+
+        return $handlers;
     }
 }

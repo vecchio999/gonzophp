@@ -77,6 +77,30 @@ for failed requests. Dynamic values use the same character restrictions as
 static segments: lowercase ASCII letters, digits, underscores, and hyphens.
 The items() method is not implemented.
 
+HTTP METHODS
+
+Unprefixed handler files handle GET only. Other methods use __METHOD__ prefixes:
+
+utenti/index.php                       GET /utenti/
+utenti/__POST__index.php               POST /utenti/
+utenti/__ITEM__/__DELETE__index.php    DELETE /utenti/mario/
+__POST__utenti.php                     POST /utenti
+
+Method prefixes are uppercase ASCII letters surrounded by double underscores.
+GET must use the unprefixed filename; __GET__ is not supported.
+The router selects the route before selecting the HTTP method. A static file
+family wins over directory indexes and dynamic branches even when only a POST
+variant exists. Unsupported methods never fall back to another route or GET.
+Missing routes return 404; existing routes without the requested method return
+405 and an Allow header listing available methods. Captures remain empty on 405.
+HEAD uses __HEAD__ when present, otherwise GET, with response output suppressed
+through request shutdown (also if a handler exits). GET handlers should be safe
+and read-only because HEAD may execute them. HEAD is included in Allow when GET
+exists. The HEAD output buffer must not be removed by application code.
+OPTIONS requires an explicit __OPTIONS__ file; there is no automatic CORS support.
+No method override through query parameters, form fields, or headers is applied.
+Apache may handle or reject some methods before they reach PHP.
+
 HANDLER AUTHORIZATION
 
 Routes are public unless their handler explicitly calls:
@@ -117,6 +141,65 @@ Resolved files must remain inside the views directory, including symlink targets
 These are application errors rather than routing 404 responses. Layouts and
 view inheritance are not implemented.
 
+SHARED HEADER AND FOOTER
+
+A view can compose other views using render(), without additional framework API:
+
+<?php $app->render('shared/header', ['title' => 'Profilo Utente']); ?>
+<!-- Page content goes here. -->
+<?php $app->render('shared/footer'); ?>
+
+views/shared/header.php opens the document and escapes the supplied title.
+views/shared/footer.php closes the document. Each call receives its own data
+array; header data does not replace the data in the calling view.
+The profile view demonstrates this composition. Routing remains unchanged.
+
+RESPONSE HELPERS
+
+renderJson(mixed $data, int $status = 200) sends application/json and terminates
+execution. Encoding uses JSON_THROW_ON_ERROR before response headers are changed;
+invalid UTF-8, recursion, or unsupported values raise JsonException. Status codes
+must be 200-599 except 204, 205, and 304, which cannot carry JSON content.
+HEAD sends the same status and content type without a body.
+
+redirect(string $url, int $status = 302) sends Location and terminates execution.
+Allowed statuses are 301, 302, 303, 307, 308. Use 303 after POST to request a GET
+on the destination. Pass an application-controlled destination; external URLs
+are allowed, so do not use unvalidated user input. Empty destinations, whitespace,
+and control characters are rejected. Encode spaces in URLs as %20.
+
+Both helpers must be called before output, including buffered output. They raise
+RuntimeException if headers have already been sent; they do not discard earlier
+buffered content. Invalid arguments raise InvalidArgumentException.
+Unlike render(), which continues for template composition, these methods exit:
+code after the call does not execute. No json() or renderHtml() aliases exist.
+
+Examples:
+$app->renderJson(['username' => $app->item(0)]);
+$app->renderJson(['error' => 'User not found'], 404);
+$app->redirect('/utenti', 303);
+
+Debug and native PHP errors
+
+$app = new GonzoPHP(['debug' => true]);
+
+Debug defaults to false. The constructor sets PHP display_errors to 1 only
+when debug is exactly true, otherwise to 0. This setting applies from construction
+onward for the current execution; it is not restored after run().
+PHP error_reporting, log_errors and error_log remain configured by the host.
+Debug does not enable reporting levels that PHP has disabled.
+
+Gonzo does not catch exceptions centrally, format diagnostic pages, clean
+response headers, or buffer partial pages for recovery. Exceptions propagate to
+the caller; uncaught errors are handled natively by PHP. There is no custom 500
+response or guarantee that previously emitted output can be replaced.
+The existing HEAD-only buffer remains to suppress response bodies.
+
+Configure display_errors=Off and log_errors=On in production PHP settings;
+errors before the constructor and startup/parse errors cannot be controlled by
+this runtime switch. Keep diagnostics enabled only in local development and
+avoid including secrets in exception messages.
+
 CONFIGURATION
 
 The default setup needs no configuration arguments:
@@ -143,7 +226,7 @@ them too: changing configuration does not update Apache access rules.
 
 CONVENTIONS
 
-Use lowercase filenames and directory names, except for special dynamic
+Use lowercase filenames and directory names, except for uppercase __METHOD__ prefixes, special dynamic
 __ITEM__ directories and the explicitly named AGENTS.md and README.txt files.
 Use UpperCamelCase class names (GonzoPHP) and English code comments.
 The existing local project folder keeps its name, GonzoPHP.
