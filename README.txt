@@ -1,0 +1,174 @@
+Gonzo PHP
+=========
+
+A small, explicit, filesystem-oriented PHP framework, built incrementally.
+This is an early development version, not a complete application framework.
+
+REQUIREMENTS
+
+- PHP 8.0 or later (currently tested with PHP 8.2).
+- Apache with mod_rewrite and .htaccess overrides enabled for the supplied
+  Options, rewrite, and access-control directives.
+- Other web servers require equivalent configuration; .htaccess is Apache-specific.
+
+SETUP
+
+Place the project contents in the site's document root. Include the hidden root
+.htaccess file when copying or uploading the project.
+For a local MAMP setup, select the project directory as the document root.
+
+Open the site URL. The initial page displays: Gonzo PHP
+
+LAYOUT
+
+index.php               Public entry point
+.htaccess               Request forwarding and access protection
+gonzophp/gonzo.php       GonzoPHP framework class
+handlers/index.php      Initial application handler
+views/                  Application templates
+AGENTS.md               Instructions for AI coding assistants
+README.txt              This guide
+
+Keep application handlers and views separate from the gonzophp directory so
+framework updates can preserve application code.
+
+CURRENT BEHAVIOR
+
+index.php creates GonzoPHP with default configuration and calls run().
+run() resolves a handler from the URL path and executes it.
+Apache forwards URLs that do not match an existing public file or directory to
+index.php. Handler lookup then follows these examples:
+
+/                 -> handlers/index.php
+/contatti         -> handlers/contatti.php or handlers/contatti/index.php
+/utenti/lista     -> handlers/utenti/lista.php or handlers/utenti/lista/index.php
+
+The file takes precedence over the directory index. Query strings do not affect
+selection and remain available in $_GET. Leading and trailing slashes are
+trimmed; empty segments inside the path are rejected. Each segment is decoded
+once and accepts only lowercase ASCII letters, digits, underscores, and hyphens.
+No .php suffix is needed in route URLs. Invalid or missing routes return HTTP
+404 with Not Found. Resolved handler files must stay inside the handler root,
+including when symbolic links are involved. A missing handler directory is a
+configuration error and raises RuntimeException.
+
+URLs currently assume deployment at the site root, not a subdirectory mount.
+Permission callbacks are not implemented; use requireAccess() in handlers.
+
+DYNAMIC ROUTES
+
+A __ITEM__ directory matches a segment when no static directory matches.
+On the final segment a static PHP file takes precedence over directories.
+Once a static directory is chosen, the router never retries a dynamic branch
+if a later segment or index.php is missing.
+
+Example:
+/utenti/davide/articoli/42/edit
+-> handlers/utenti/__ITEM__/articoli/__ITEM__/edit.php
+
+The handler receives the current framework instance as $app:
+
+$username = $app->item(0); // davide
+$articleId = $app->item(1); // 42
+
+Indices start at zero and count only dynamic segments. Values are strings;
+missing indices return null. Captures are cleared on each run and remain empty
+for failed requests. Dynamic values use the same character restrictions as
+static segments: lowercase ASCII letters, digits, underscores, and hyphens.
+The items() method is not implemented.
+
+HANDLER AUTHORIZATION
+
+Routes are public unless their handler explicitly calls:
+
+$app->requireAccess($condition);
+
+Pass a boolean condition. True continues execution; false sends HTTP 403 with
+Forbidden and terminates the script. Place the check before output and protected
+operations. Omitting it leaves the route public. Authentication, login, and
+session startup are the application's responsibility. No extra permission files
+are required.
+
+VIEWS
+
+Handler and view directory structures are independent. In a handler, call:
+
+$app->render('utenti/profilo', ['username' => $app->item(0)]);
+
+This outputs views/utenti/profilo.php from the configured views directory.
+To use views/utenti/profilo/index.php, request 'utenti/profilo/index' explicitly.
+There is no index fallback or __ITEM__ matching. Names are relative without
+.php; each segment accepts lowercase letters, digits, underscores, and hyphens.
+
+Inside the template, read values through $data, not automatically created
+variables. Escape values explicitly for the output context, for example:
+
+<h1><?= $app->escape($data['username']) ?></h1>
+
+
+Views receive the current framework instance as $app. escape(string $value)
+returns escaped HTML without printing: it uses ENT_QUOTES | ENT_SUBSTITUTE
+and UTF-8. Use it for HTML text and quoted attribute values. JavaScript, CSS,
+and URLs require context-specific handling; escape() does not validate URLs.
+
+render() outputs directly and returns no content string. Missing or inaccessible
+views raise RuntimeException; invalid names raise InvalidArgumentException.
+Resolved files must remain inside the views directory, including symlink targets.
+These are application errors rather than routing 404 responses. Layouts and
+view inheritance are not implemented.
+
+CONFIGURATION
+
+The default setup needs no configuration arguments:
+
+$app = new GonzoPHP();
+$app->run();
+
+The constructor accepts an optional array of overrides:
+
+$app = new GonzoPHP([
+    'root' => __DIR__,
+    'handlers' => __DIR__ . '/custom-handlers',
+    'views' => __DIR__ . '/custom-views',
+]);
+
+The root option defaults to the parent directory of the framework directory.
+The handlers and views defaults are derived from the selected root, so passing
+only 'root' relocates both. Explicit handlers or views paths take precedence.
+Root is a filesystem path, not a URL or an Apache document-root setting.
+Omitted options keep their defaults. Use absolute filesystem paths for custom
+directories. The views setting selects the template directory for render().
+If custom directories are inside the document root, update .htaccess to protect
+them too: changing configuration does not update Apache access rules.
+
+CONVENTIONS
+
+Use lowercase filenames and directory names, except for special dynamic
+__ITEM__ directories and the explicitly named AGENTS.md and README.txt files.
+Use UpperCamelCase class names (GonzoPHP) and English code comments.
+The existing local project folder keeps its name, GonzoPHP.
+
+ACCESS PROTECTION
+
+The root .htaccess centralizes access protection: it blocks direct requests
+to gonzophp, handlers, views, AGENTS.md, and README.txt. No internal .htaccess
+files are required in these directories.
+Directory listings are disabled. These protections do not prevent PHP from
+including application files internally.
+
+After deployment, verify:
+- / displays Gonzo PHP.
+- A path without a matching handler, such as /utenti/davide, returns HTTP 404.
+- /handlers/index.php, /views/, and /gonzophp/gonzo.php return HTTP 403.
+- /AGENTS.md and /README.txt return HTTP 403.
+- An existing directory without an index returns HTTP 403.
+
+These files must be served through the intended Apache configuration for the
+protections to apply. Serving the project with a different server requires
+recreating and verifying the same protections.
+
+WORKING WITH AI
+
+Ask your coding assistant to read AGENTS.md before making changes. Not all
+assistants load that file automatically. Keep both documents updated as real
+features are added; do not treat planned APIs as already available.

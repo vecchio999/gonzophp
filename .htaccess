@@ -1,0 +1,16 @@
+Options -Indexes -MultiViews
+
+RewriteEngine On
+
+# Block direct HTTP access to Git metadata and environment files.
+RewriteRule (^|/)(?:\.git(?:/|$)|\.gitignore$|\.env(?:[./]|$)) - [F,NC]
+
+# Block direct HTTP access to project documentation.
+RewriteRule ^(?:agents\.md|readme\.txt)(?:/|$) - [F,NC]
+
+# Block direct HTTP access to framework and application directories.
+RewriteRule ^(?:gonzophp|handlers|views)(?:/|$) - [F,NC]
+
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.php [L]
