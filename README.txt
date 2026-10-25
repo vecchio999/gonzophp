@@ -22,6 +22,23 @@ Small framework. Plain PHP. The shared header loads Pico CSS from its CDN.
 Only the homepage handler and default/shared views are bundled. Other route
 examples in this guide illustrate conventions and are not included files.
 
+BASE CSS: PICO CSS
+
+The starter uses Pico CSS v2 as its base CSS framework. It is loaded directly
+from the jsDelivr CDN in views/shared/header.php:
+
+https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css
+
+Pico CSS provides the default styling for the example pages, including the
+shared main container. No local CSS installation or build step is required.
+The CDN stylesheet requires network access in the visitor's browser.
+
+Pico CSS is a presentation choice for the starter, not a dependency of the PHP
+framework. To customize, replace, or host the stylesheet locally, update the
+stylesheet link in views/shared/header.php and adjust the views as needed.
+
+Pico CSS website and documentation: https://picocss.com/
+
 LAYOUT
 
 index.php               Public entry point

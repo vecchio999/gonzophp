@@ -200,6 +200,12 @@ The header opens the HTML document and body; the footer closes them.
 Each render() call has its own $data array: pass the values needed by each shared
 view explicitly. Nested rendering does not overwrite the parent view's data.
 There is no automatic layout selection or router change.
+The starter uses Pico CSS v2 as its base styling, loaded through jsDelivr in
+`views/shared/header.php`:
+`https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css`.
+Preserve the stylesheet link and shared container when editing starter views
+unless the task calls for changing the styling. Pico CSS is replaceable and is
+not required by the PHP framework.
 
 ## Response helpers
 
