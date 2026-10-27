@@ -64,8 +64,8 @@ protections to cover them; configuration does not change Apache rules.
 handler for the request method. Missing or invalid routes return HTTP 404 with `Not Found`.
 A missing handler directory raises RuntimeException as a configuration error.
 The homepage handler renders `views/index.php` with a title and message.
-The starter includes only this handler, the default view, and shared header/footer.
-Other routes shown below are documentation examples, not bundled handlers.
+The starter also includes GET and POST /csrf handlers and a csrf view as a form
+example. Other routes shown below are documentation examples, not bundled handlers.
 
 Routing rules:
 - `/` resolves to `handlers/index.php`.
@@ -137,6 +137,21 @@ OPTIONS requires an explicit __OPTIONS__ file; there is no automatic CORS suppor
 No method override through query parameters, form fields, or headers is applied.
 Apache may handle or reject some methods before they reach PHP.
 
+## Form handler responses
+
+HTML form handlers follow Post/Redirect/Get: GET handlers prepare and render
+views; handlers that process changes (POST, or PUT/PATCH/DELETE where applicable)
+finish with redirect() using status 303 to an application-controlled GET route.
+Do not render views from these mutation handlers. On ordinary input-validation
+errors, store feedback and appropriate non-sensitive field values temporarily in
+the session, then redirect too. The GET handler reads and removes this feedback;
+HEAD must not consume it. Never retain passwords or other secrets as old input.
+Security checks may terminate directly with 403, and unexpected failures may
+propagate normally. API endpoints may return JSON or an appropriate empty
+response instead of redirecting. This is an application convention, not a router
+restriction; native HTML forms support GET/POST, and requireCsrf() currently
+supports POST form fields only.
+
 ## Handler authorization
 
 Routes are public by default when their handler does not call requireAccess().
@@ -154,10 +169,40 @@ $app->requireAccess(isset($_SESSION['user_id']));
 
 This example assumes that the application has already started the session and
 manages authentication. The framework does not implement login, users, roles,
-or session startup. A login check alone does not establish ownership or other
+or automatic session startup on every request. A login check alone does not establish ownership or other
 resource permissions: include the application's required checks in the condition.
 Omitting requireAccess() makes the route public; include it when generating
 handlers intended to be restricted. Public handlers need no extra declaration.
+
+## CSRF protection for POST forms
+
+`csrfToken(): string` starts or reuses a PHP session and returns a reusable token
+from 32 secure random bytes. The reserved session key is `gonzo_csrf_token`.
+Call it in the GET handler before output and pass the token to the view.
+Render an escaped hidden input named `_csrf`; keep form markup in plain PHP/HTML.
+
+`requireCsrf(): void` must be called explicitly at the start of each POST form
+handler, before output or side effects. It starts or reuses the session, accepts
+only POST, and compares the submitted `_csrf` string with the stored token using
+hash_equals(). Missing, array-valued, or mismatched tokens return 403 Forbidden
+and exit. Validation does not generate a token. Other request bodies, JSON,
+headers, and HTTP methods are not supported by this helper.
+
+Sessions are not started by the constructor or router. Session settings and
+closing remain application-owned; configure cookies before starting a session.
+These helpers do not close an existing session. Startup failures raise
+RuntimeException. CSRF checks do not replace authorization or input validation.
+Do not put CSRF tokens in URLs, logs, or shared caches. Pages containing tokens
+must not be cached across visitors. Tokens are not one-time nonces and do not
+rotate per submission; the application can unset the reserved key to invalidate
+one. PHP session expiry also invalidates it.
+
+The bundled /csrf example uses handlers/csrf.php, handlers/__POST__csrf.php,
+and views/csrf.php. After CSRF validation, both valid and invalid name submissions
+store temporary feedback in the session and redirect to /csrf with 303. The next
+GET displays escaped feedback and restores invalid input, then consumes it.
+Refreshing does not repeat the POST or show the feedback again. HEAD does not
+consume feedback. No application data is persisted; invalid CSRF still returns 403.
 
 ## Views
 

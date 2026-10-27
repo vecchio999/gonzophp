@@ -162,6 +162,74 @@ class GonzoPHP
     }
 
     /**
+     * Return the session CSRF token, creating it on first use.
+     *
+     * Call in the handler before rendering or sending any output. The token
+     * is reusable across forms until the application removes it or the session
+     * ends. Existing active sessions are reused without changing their settings.
+     *
+     * @return string A cryptographically random, hexadecimal token.
+     * @throws RuntimeException If a session cannot be started.
+     * @throws Exception If secure random bytes cannot be generated.
+     */
+    public function csrfToken(): string
+    {
+        $this->startCsrfSession();
+
+        if (!isset($_SESSION['gonzo_csrf_token'])) {
+            $_SESSION['gonzo_csrf_token'] = bin2hex(random_bytes(32));
+        }
+
+        return $_SESSION['gonzo_csrf_token'];
+    }
+
+    /**
+     * Require a valid session CSRF token in a POST form's _csrf field.
+     *
+     * Call before output or side effects. Missing, malformed, or mismatched
+     * tokens and non-POST requests terminate with HTTP 403. Validation never
+     * creates a token. This does not replace authentication or input validation.
+     *
+     * @return void Returns only when the token is valid.
+     * @throws RuntimeException If a session cannot be started.
+     */
+    public function requireCsrf(): void
+    {
+        $this->requireAccess(($_SERVER['REQUEST_METHOD'] ?? '') === 'POST');
+        $this->startCsrfSession();
+
+        $expected = $_SESSION['gonzo_csrf_token'] ?? null;
+        $received = $_POST['_csrf'] ?? null;
+
+        $this->requireAccess(
+            is_string($expected)
+            && $expected !== ''
+            && is_string($received)
+            && hash_equals($expected, $received)
+        );
+    }
+
+    /**
+     * Start a session on demand for the CSRF helpers.
+     *
+     * Session configuration and closing remain application-owned.
+     *
+     * @return void
+     * @throws RuntimeException If sessions are disabled, headers were sent,
+     *     or PHP fails to start the session.
+     */
+    private function startCsrfSession(): void
+    {
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            return;
+        }
+
+        if (session_status() === PHP_SESSION_DISABLED || headers_sent() || !session_start()) {
+            throw new RuntimeException('Unable to start the CSRF session.');
+        }
+    }
+
+    /**
      * Render an explicitly named PHP view directly to the output.
      *
      * Names are relative to the configured view directory, without .php.

@@ -19,8 +19,8 @@ For a local MAMP setup, select the project directory as the document root.
 
 Open the site URL. The initial page displays Gonzo PHP and
 Small framework. Plain PHP. The shared header loads Pico CSS from its CDN.
-Only the homepage handler and default/shared views are bundled. Other route
-examples in this guide illustrate conventions and are not included files.
+The homepage and a CSRF form example at /csrf are bundled, with shared views.
+Other route examples in this guide illustrate conventions and are not included files.
 
 BASE CSS: PICO CSS
 
@@ -292,3 +292,49 @@ WORKING WITH AI
 Ask your coding assistant to read AGENTS.md before making changes. Not all
 assistants load that file automatically. Keep both documents updated as real
 features are added; do not treat planned APIs as already available.
+
+CSRF FORM EXAMPLE
+
+csrfToken(): string starts or reuses a PHP session and returns a reusable token
+from 32 secure random bytes. The reserved session key is gonzo_csrf_token.
+Call it in the GET handler before output and pass the token to the view.
+Render an escaped hidden input named _csrf; keep form markup in plain PHP/HTML.
+
+requireCsrf(): void must be called explicitly at the start of each POST form
+handler, before output or side effects. It starts or reuses the session, accepts
+only POST, and compares the submitted _csrf string with the stored token using
+hash_equals(). Missing, array-valued, or mismatched tokens return 403 Forbidden
+and exit. Validation does not generate a token. Other request bodies, JSON,
+headers, and HTTP methods are not supported by this helper.
+
+Sessions are not started by the constructor or router. Session settings and
+closing remain application-owned; configure cookies before starting a session.
+These helpers do not close an existing session. Startup failures raise
+RuntimeException. CSRF checks do not replace authorization or input validation.
+Do not put CSRF tokens in URLs, logs, or shared caches. Pages containing tokens
+must not be cached across visitors. Tokens are not one-time nonces and do not
+rotate per submission; the application can unset the reserved key to invalidate
+one. PHP session expiry also invalidates it.
+
+The bundled /csrf example uses handlers/csrf.php, handlers/__POST__csrf.php,
+and views/csrf.php. After CSRF validation, both valid and invalid name submissions
+store temporary feedback in the session and redirect to /csrf with 303. The next
+GET displays escaped feedback and restores invalid input, then consumes it.
+Refreshing does not repeat the POST or show the feedback again. HEAD does not
+consume feedback. No application data is persisted; invalid CSRF still returns 403.
+
+
+FORM HANDLER RESPONSES
+
+HTML form handlers follow Post/Redirect/Get: GET handlers prepare and render
+views; handlers that process changes (POST, or PUT/PATCH/DELETE where applicable)
+finish with redirect() using status 303 to an application-controlled GET route.
+Do not render views from these mutation handlers. On ordinary input-validation
+errors, store feedback and appropriate non-sensitive field values temporarily in
+the session, then redirect too. The GET handler reads and removes this feedback;
+HEAD must not consume it. Never retain passwords or other secrets as old input.
+Security checks may terminate directly with 403, and unexpected failures may
+propagate normally. API endpoints may return JSON or an appropriate empty
+response instead of redirecting. This is an application convention, not a router
+restriction; native HTML forms support GET/POST, and requireCsrf() currently
+supports POST form fields only.
