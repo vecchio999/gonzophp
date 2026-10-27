@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="it">
+<html lang="<?= $app->escape($app->config('language')) ?>">
 <head>
     <meta charset="utf-8">
     <title><?= $app->escape($data['title']) ?></title>

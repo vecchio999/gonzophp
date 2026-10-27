@@ -120,7 +120,9 @@ utenti/__POST__index.php               POST /utenti/
 utenti/__ITEM__/__DELETE__index.php    DELETE /utenti/mario/
 __POST__utenti.php                     POST /utenti
 
-Method prefixes are uppercase ASCII letters surrounded by double underscores.
+Supported method prefixes are __POST__, __PUT__, __PATCH__, __DELETE__,
+__HEAD__, and __OPTIONS__. Other prefixes (including typos such as __POTS__)
+are ignored and never included in Allow.
 GET must use the unprefixed filename; __GET__ is not supported.
 The router selects the route before selecting the HTTP method. A static file
 family wins over directory indexes and dynamic branches even when only a POST
@@ -195,6 +197,15 @@ application errors, not routing 404 responses. No layouts or view inheritance
 are implemented. Apply requireAccess() in the handler before rendering.
 
 ## Shared views
+
+The language configuration option defaults to 'en'. Override it at startup:
+$app = new GonzoPHP(['language' => 'it']);
+
+config(string $key): mixed reads a configuration value and returns null for an
+unknown key. The shared header uses $app->config('language'), escaped with
+escape(), for the HTML lang attribute. This declares the document language;
+it does not translate page content or change the PHP locale.
+
 
 Compose templates with the existing render() method. The default view uses
 `shared/header` with an explicit `title` string, and `shared/footer` without data.

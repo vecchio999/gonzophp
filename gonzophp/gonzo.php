@@ -22,7 +22,7 @@ class GonzoPHP
     /**
      * Application configuration merged with the default filesystem paths.
      *
-     * Supported keys are root, handlers, views, and debug. The views path is used
+     * Supported keys are root, handlers, views, debug, and language. The views path is used
      * by render() independently of the handler directory structure.
      *
      * @var array<string, mixed>
@@ -46,8 +46,8 @@ class GonzoPHP
      * Debug toggles PHP display_errors from construction onward; reporting
      * levels and logging remain controlled by the host's PHP configuration.
      *
-     * @param array{root?: string, handlers?: string, views?: string, debug?: bool} $config
-     *     Optional filesystem paths and development diagnostics flag (default false).
+     * @param array{root?: string, handlers?: string, views?: string, debug?: bool, language?: string} $config
+     *     Optional paths, debug flag (false), and document language (en).
      */
     public function __construct(array $config = [])
     {
@@ -55,6 +55,7 @@ class GonzoPHP
 
         $this->config = array_replace([
             'debug' => false,
+            'language' => 'en',
             'root' => $root,
             'handlers' => $root . '/handlers',
             'views' => $root . '/views',
@@ -114,6 +115,17 @@ class GonzoPHP
         $app = $this;
 
         require $handler;
+    }
+
+    /**
+     * Read a configuration value without exposing the configuration property.
+     *
+     * @param string $key Configuration key.
+     * @return mixed Configured value, or null if the key does not exist.
+     */
+    public function config(string $key): mixed
+    {
+        return $this->config[$key] ?? null;
     }
 
     /**
@@ -372,7 +384,8 @@ class GonzoPHP
      * Collect method-specific files for a logical route name.
      *
      * The unprefixed file handles GET. Other methods use __METHOD__name.php;
-     * method names contain uppercase ASCII letters. __GET__ is not an alias.
+     * supported prefixes are POST, PUT, PATCH, DELETE, HEAD, and OPTIONS.
+     * __GET__ is not an alias; unrecognized method prefixes are ignored.
      * Only readable files resolving inside the handler root are eligible.
      *
      * @param string $directory Directory to inspect.
@@ -390,12 +403,12 @@ class GonzoPHP
         }
 
         $handlers = [];
-        $pattern = '/\A__([A-Z]+)__' . preg_quote($name, '/') . '\.php\z/';
+        $pattern = '/\A__(POST|PUT|PATCH|DELETE|HEAD|OPTIONS)__' . preg_quote($name, '/') . '\.php\z/';
 
         foreach ($entries as $entry) {
             if ($entry === $name . '.php') {
                 $method = 'GET';
-            } elseif (preg_match($pattern, $entry, $matches) && $matches[1] !== 'GET') {
+            } elseif (preg_match($pattern, $entry, $matches)) {
                 $method = $matches[1];
             } else {
                 continue;
