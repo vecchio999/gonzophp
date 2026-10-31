@@ -22,12 +22,15 @@ class GonzoPHP
     /**
      * Application configuration merged with the default filesystem paths.
      *
-     * Supported keys are root, handlers, views, debug, and language. The views path is used
+     * Supported keys are root, handlers, views, debug, language, and database. The views path is used
      * by render() independently of the handler directory structure.
      *
      * @var array<string, mixed>
      */
     private array $config;
+
+    /** Lazily created database connection, owned by this application instance. */
+    private ?PDO $database = null;
 
     /**
      * Dynamic values collected in route order.
@@ -46,7 +49,7 @@ class GonzoPHP
      * Debug toggles PHP display_errors from construction onward; reporting
      * levels and logging remain controlled by the host's PHP configuration.
      *
-     * @param array{root?: string, handlers?: string, views?: string, debug?: bool, language?: string} $config
+     * @param array{root?: string, handlers?: string, views?: string, debug?: bool, language?: string, database?: array{host?: string, dbname: string, port?: int, charset?: string, username?: string, password?: string}} $config
      *     Optional paths, debug flag (false), and document language (en).
      */
     public function __construct(array $config = [])
@@ -56,6 +59,7 @@ class GonzoPHP
         $this->config = array_replace([
             'debug' => false,
             'language' => 'en',
+            'database' => null,
             'root' => $root,
             'handlers' => $root . '/handlers',
             'views' => $root . '/views',
@@ -126,6 +130,69 @@ class GonzoPHP
     public function config(string $key): mixed
     {
         return $this->config[$key] ?? null;
+    }
+
+    /**
+     * Return the shared PDO connection, connecting only on first use.
+     *
+     * MySQL configuration uses separate DSN fields; dbname is required.
+     * With localhost, PDO MySQL may use its configured Unix socket instead of TCP.
+     * PDO exceptions propagate; a failed connection is not cached.
+     *
+     * @throws InvalidArgumentException If database configuration is invalid.
+     * @throws PDOException If the connection cannot be established.
+     */
+    public function db(): PDO
+    {
+        if ($this->database !== null) {
+            return $this->database;
+        }
+
+        $settings = $this->config('database');
+        if (!is_array($settings)) {
+            throw new InvalidArgumentException('Configure database before calling db().');
+        }
+
+        $settings = array_replace([
+            'host' => 'localhost',
+            'dbname' => '',
+            'port' => 3306,
+            'charset' => 'utf8mb4',
+            'username' => '',
+            'password' => '',
+        ], $settings);
+
+        // Reject DSN delimiters and control characters in interpolated fields.
+        foreach (['host', 'dbname', 'charset'] as $key) {
+            $value = $settings[$key];
+            if (!is_string($value) || trim($value) === '' || preg_match('/[;\x00-\x1f\x7f]/', $value)) {
+                throw new InvalidArgumentException('Invalid database ' . $key . '.');
+            }
+        }
+        if (!preg_match('/^[a-zA-Z0-9_]+$/D', $settings['charset'])) {
+            throw new InvalidArgumentException('Invalid database charset.');
+        }
+        if (!is_int($settings['port']) || $settings['port'] < 1 || $settings['port'] > 65535) {
+            throw new InvalidArgumentException('Database port must be an integer between 1 and 65535.');
+        }
+        foreach (['username', 'password'] as $key) {
+            if (!is_string($settings[$key])) {
+                throw new InvalidArgumentException('Invalid database ' . $key . '.');
+            }
+        }
+
+        $dsn = 'mysql:host=' . $settings['host']
+            . ';dbname=' . $settings['dbname']
+            . ';port=' . $settings['port']
+            . ';charset=' . $settings['charset'];
+
+        $this->database = new PDO($dsn, $settings['username'], $settings['password'], [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            PDO::ATTR_EMULATE_PREPARES => false,
+        ]);
+
+        return $this->database;
     }
 
     /**

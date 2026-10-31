@@ -338,3 +338,44 @@ propagate normally. API endpoints may return JSON or an appropriate empty
 response instead of redirecting. This is an application convention, not a router
 restriction; native HTML forms support GET/POST, and requireCsrf() currently
 supports POST form fields only.
+
+## Optional MySQL connection (PDO)
+
+The framework can lazily create one PDO connection per GonzoPHP instance:
+
+```php
+$app = new GonzoPHP([
+    'database' => [
+        'host' => 'localhost',
+        'dbname' => 'my_application',
+        'port' => 3306,
+        'charset' => 'utf8mb4',
+        'username' => 'my_user',
+        'password' => 'my_password',
+    ],
+]);
+
+$query = $app->db()->prepare('SELECT * FROM companies WHERE id = :id');
+$query->execute(['id' => 42]);
+$company = $query->fetch();
+```
+
+Only dbname is required inside database. Defaults: host localhost, port 3306,
+charset utf8mb4, username and password empty strings. Port must be an integer
+between 1 and 65535. The DSN is assembled internally; no DSN input is needed.
+Database configuration is optional: construction and routing never connect.
+Calling db() without valid configuration raises InvalidArgumentException.
+The pdo_mysql extension is required only when using db().
+
+The returned object is native PDO, reused by subsequent db() calls on that
+instance. PDO uses exception errors, associative fetches, and native prepared
+statements. Queries and transactions belong to application code; there is no
+query builder or ORM. Connection failures propagate as PDOException and can
+be retried by calling db() again. Never display connection errors to visitors.
+Keep real credentials out of version control and source them from private
+application configuration or environment variables.
+
+With host localhost, PDO MySQL may use the PHP-configured Unix socket and ignore
+the port. Use 127.0.0.1 when a TCP connection on the specified port is required.
+config('database') returns the supplied configuration, not merged DB defaults;
+defaults and validation are applied when db() first connects.
