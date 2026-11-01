@@ -15,14 +15,14 @@
  * Static URL paths map to a matching PHP file or a directory's index.php.
  * Dynamic __ITEM__ directories capture values in route order.
  * Handlers may enforce access conditions with requireAccess().
- * Views produce output through render(); authentication is application-owned.
+ * Views produce output through render(); authenticate() verifies credentials.
  */
 class GonzoPHP
 {
     /**
      * Application configuration merged with the default filesystem paths.
      *
-     * Supported keys are root, handlers, views, debug, language, and database. The views path is used
+     * Supported keys are root, handlers, views, debug, language, database, and users. The views path is used
      * by render() independently of the handler directory structure.
      *
      * @var array<string, mixed>
@@ -49,7 +49,7 @@ class GonzoPHP
      * Debug toggles PHP display_errors from construction onward; reporting
      * levels and logging remain controlled by the host's PHP configuration.
      *
-     * @param array{root?: string, handlers?: string, views?: string, debug?: bool, language?: string, database?: array{host?: string, dbname: string, port?: int, charset?: string, username?: string, password?: string}} $config
+     * @param array{root?: string, handlers?: string, views?: string, debug?: bool, language?: string, users?: array<string, string>, database?: array{host?: string, dbname: string, port?: int, charset?: string, username?: string, password?: string}} $config
      *     Optional paths, debug flag (false), and document language (en).
      */
     public function __construct(array $config = [])
@@ -60,6 +60,14 @@ class GonzoPHP
             'debug' => false,
             'language' => 'en',
             'database' => null,
+            'users' => [
+                // Demo credentials: user / password. Replace or disable before deployment.
+                // Generate a hash once: echo password_hash('your-new-password', PASSWORD_DEFAULT);
+                // PHP supplies a random salt and embeds the algorithm settings in the hash.
+                // Paste the complete result in single quotes; never hash on every request.
+                // Override 'users' in application config; an empty array disables all default users.
+                'user' => '$2y$10$pq/l.YvXMQxBbuwzHTqrVuLQce3bOgUJM0EoHRWGdmCgcKlsWJa/2',
+            ],
             'root' => $root,
             'handlers' => $root . '/handlers',
             'views' => $root . '/views',
@@ -130,6 +138,45 @@ class GonzoPHP
     public function config(string $key): mixed
     {
         return $this->config[$key] ?? null;
+    }
+
+    /**
+     * Verify credentials without starting a session or changing login state.
+     *
+     * Applications own login forms, CSRF checks, session state, and rate limits.
+     * Unknown users and incorrect passwords both return false.
+     */
+    public function authenticate(string $username, string $password): bool
+    {
+        $hash = $this->getPasswordHash($username);
+
+        return $hash !== null && password_verify($password, $hash);
+    }
+
+    /**
+     * Find a password hash in the configured username => hash map.
+     *
+     * Override this method to use another source, such as a database.
+     * Return null when the user does not exist; never return plaintext passwords.
+     *
+     * @throws InvalidArgumentException If the users map or selected hash is invalid.
+     */
+    protected function getPasswordHash(string $username): ?string
+    {
+        $users = $this->config('users');
+        if (!is_array($users)) {
+            throw new InvalidArgumentException('Users must be a username => password hash array.');
+        }
+
+        if (!array_key_exists($username, $users)) {
+            return null;
+        }
+
+        if (!is_string($users[$username])) {
+            throw new InvalidArgumentException('User password hash must be a string.');
+        }
+
+        return $users[$username];
     }
 
     /**
@@ -297,14 +344,15 @@ class GonzoPHP
     }
 
     /**
-     * Render an explicitly named PHP view directly to the output.
+     * Render a complete HTML page directly to the output.
      *
      * Names are relative to the configured view directory, without .php.
      * Use lowercase letters, digits, underscores, and hyphens in each segment.
      * No index.php fallback or dynamic directory matching is performed.
      * Data is available as $data; keys are not extracted into local variables.
      * The current framework instance is available as $app.
-     * Templates must escape values for their output context.
+     * Templates must escape values for their output context. Call once per response,
+     * before output; compose shared templates with ordinary includes.
      *
      * @param string $view Relative view name, for example utenti/profilo.
      * @param array<string, mixed> $data Values made available to the view.

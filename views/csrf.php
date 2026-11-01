@@ -1,4 +1,4 @@
-<?php $app->render('shared/header', ['title' => $data['title']]); ?>
+<?php include __DIR__ . '/shared/header.php'; ?>
 
 <h1><?= $app->escape($data['title']) ?></h1>
 <p>This form checks a session CSRF token. Feedback is stored temporarily in your session.</p>
@@ -16,4 +16,4 @@
 
 <p><a href="/">Back to home</a></p>
 
-<?php $app->render('shared/footer'); ?>
+<?php include __DIR__ . '/shared/footer.php'; ?>

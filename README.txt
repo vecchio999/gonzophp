@@ -134,8 +134,8 @@ $app->requireAccess($condition);
 
 Pass a boolean condition. True continues execution; false sends HTTP 403 with
 Forbidden and terminates the script. Place the check before output and protected
-operations. Omitting it leaves the route public. Authentication, login, and
-session startup are the application's responsibility. No extra permission files
+operations. Omitting it leaves the route public. Login sessions and session startup are the application's responsibility.
+Use authenticate() to verify configured user credentials. No extra permission files
 are required.
 
 VIEWS
@@ -163,7 +163,7 @@ returns escaped HTML without printing: it uses ENT_QUOTES | ENT_SUBSTITUTE
 and UTF-8. Use it for HTML text and quoted attribute values. JavaScript, CSS,
 and URLs require context-specific handling; escape() does not validate URLs.
 
-render() outputs directly and returns no content string. Missing or inaccessible
+render() outputs the page directly and returns no content string. Missing or inaccessible
 views raise RuntimeException; invalid names raise InvalidArgumentException.
 Resolved files must remain inside the views directory, including symlink targets.
 These are application errors rather than routing 404 responses. Layouts and
@@ -180,16 +180,8 @@ escape(), for the HTML lang attribute. This declares the document language;
 it does not translate page content or change the PHP locale.
 
 
-A view can compose other views using render(), without additional framework API:
-
-<?php $app->render('shared/header', ['title' => $data['title']]); ?>
-<!-- Page content goes here. -->
-<?php $app->render('shared/footer'); ?>
-
-views/shared/header.php opens the document and escapes the supplied title.
-views/shared/footer.php closes the document. Each call receives its own data
-array; header data does not replace the data in the calling view.
-The default view demonstrates this composition. Routing remains unchanged.
+Call render() once for the main view. Use ordinary includes for shared header
+and footer; they inherit $app and $data. See HTML rendering below.
 
 RESPONSE HELPERS
 
@@ -208,7 +200,7 @@ and control characters are rejected. Encode spaces in URLs as %20.
 Both helpers must be called before output, including buffered output. They raise
 RuntimeException if headers have already been sent; they do not discard earlier
 buffered content. Invalid arguments raise InvalidArgumentException.
-Unlike render(), which continues for template composition, these methods exit:
+These response helpers exit, while render() returns after emitting the page:
 code after the call does not execute. No json() or renderHtml() aliases exist.
 
 Examples:
@@ -379,3 +371,119 @@ With host localhost, PDO MySQL may use the PHP-configured Unix socket and ignore
 the port. Use 127.0.0.1 when a TCP connection on the specified port is required.
 config('database') returns the supplied configuration, not merged DB defaults;
 defaults and validation are applied when db() first connects.
+
+## User credentials
+
+The optional users configuration is a username => password hash map. By default
+it contains the demo user "user" with password "password", stored as a hash.
+Replace this account before deployment, or disable it with ['users' => []].
+Supplying a users map replaces the entire default map; the demo account is not
+retained unless explicitly included.
+
+```php
+$app = new GonzoPHP([
+    'users' => [
+        'mario' => '$2y$...', // Replace with a complete generated hash.
+        'luigi' => '$2y$...',
+    ],
+]);
+
+$valid = $app->authenticate($username, $password);
+```
+
+Generate each hash once when setting or changing a password:
+
+```php
+echo password_hash('your-password', PASSWORD_DEFAULT);
+```
+
+PHP automatically generates a random salt and includes the algorithm settings
+in the hash. Use a strong, unique password; hashing does not make a weak password
+strong. Copy the complete result into private application configuration, using
+a single-quoted PHP string to preserve dollar signs. Do not generate
+hashes on every request, store plaintext passwords, or commit real credentials.
+authenticate(string $username, string $password): bool uses password_verify().
+Unknown usernames and wrong passwords return false. Matching is case-sensitive;
+usernames and passwords are not trimmed or normalized. Invalid users configuration
+or a non-string hash for the selected user raises InvalidArgumentException.
+
+Override only protected getPasswordHash(string $username): ?string in a GonzoPHP
+subclass to retrieve hashes from a database or another source. Return null for
+unknown users. For example, with an application-owned users table:
+
+```php
+class MyApp extends GonzoPHP
+{
+    protected function getPasswordHash(string $username): ?string
+    {
+        $query = $this->db()->prepare(
+            'SELECT password_hash FROM users WHERE username = :username'
+        );
+        $query->execute(['username' => $username]);
+        $hash = $query->fetchColumn();
+
+        return $hash === false ? null : $hash;
+    }
+}
+```
+
+Credential verification does not start a session, set a logged-in user, redirect,
+or authorize a route. Applications own login/logout handlers, CSRF validation,
+login rate limiting, session regeneration after successful login, and session state.
+Continue using requireAccess() for protected handlers. The default account is for local demos only; see the starter login page below.
+
+## Starter login page
+
+The default application includes GET /login (handlers/login.php), POST /login
+(handlers/__POST__login.php), and views/login.php. The shared navbar links to /login.
+The page uses the shared Pico CSS layout. Default demo credentials: user / password.
+
+POST validates CSRF before verifying string credentials with authenticate().
+Invalid input or credentials store one generic error and only the username as
+old input, then redirect to /login with 303. GET consumes this feedback; HEAD
+does not. Passwords are never stored in session feedback or rendered back.
+On success the session ID is regenerated, $_SESSION['username'] records the
+username, old feedback and the CSRF token are removed, and a 303 redirects to
+/login. The page then displays the escaped authenticated username. Login
+pages use the ordinary render() method. The shared navbar provides a CSRF-protected logout link.
+
+Applications using this login can start or reuse their session before checking
+$app->requireAccess(isset($_SESSION['username'])). The router does not start
+sessions automatically. This starter does not implement login rate limiting.
+
+## Starter navbar and logout
+
+views/shared/header.php starts or reuses the session through csrfToken() before
+output. All starter pages using this header
+show a right-aligned login link for anonymous visitors, or an escaped
+"hello, {username}" and logout control for authenticated visitors. The logout
+link points to GET /logout?_csrf=TOKEN and uses onclick="return confirm('are you sure?')".
+Cancel prevents ordinary click navigation. This dialog and rel="nofollow" do not
+prevent prefetch or automatic requests; GET with a valid token performs logout.
+The token appears in the URL and may be recorded in browser history or logs.
+The framework constructor and router still do not start sessions automatically.
+
+handlers/logout.php validates the query-string CSRF token against the session, removes username, login feedback,
+and the CSRF token from the session, regenerates the session ID (invalidating
+the old ID), and redirects to / with HTTP 303. Other session values are retained.
+HEAD /logout returns without changing session state. POST /logout returns 405.
+Missing, array-valued, or mismatched query tokens return 403. requireCsrf() remains
+unchanged and supports POST form fields only.
+
+## HTML rendering
+
+Call render() once per handler to produce the complete HTML response, before any
+output, and emit no output afterward. This is a convention, not a runtime counter.
+Compose shared templates using ordinary PHP includes with fixed paths:
+
+```php
+<?php include __DIR__ . '/shared/header.php'; ?>
+<!-- Page content -->
+<?php include __DIR__ . '/shared/footer.php'; ?>
+```
+
+Includes inherit $app and $data. Never derive include paths from request input.
+render() requires the main view directly, without an output buffer or automatic
+ETag/conditional-response handling. Cache policy belongs to the application.
+PHP session cache-limiter headers remain unchanged when a session starts.
+The router's existing HEAD-only buffer still suppresses response bodies.
